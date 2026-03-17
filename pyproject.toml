@@ -1,0 +1,59 @@
+[project]
+name = "svncli"
+version = "1.0.0"
+description = "CLI tool for syncing files with Polarion SVN when direct SVN access is not available"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control",
+]
+dependencies = ["requests>=2.28", "rookiepy>=0.5"]
+
+[project.optional-dependencies]
+interactive = ["playwright>=1.40"]
+dev = ["pytest>=7", "pytest-cov>=4", "playwright>=1.40", "ruff>=0.4"]
+
+[project.urls]
+Homepage = "https://github.com/pupca/svncli"
+Issues = "https://github.com/pupca/svncli/issues"
+Changelog = "https://github.com/pupca/svncli/blob/main/CHANGELOG.md"
+
+[project.scripts]
+svncli = "svncli.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["svncli*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["svncli"]
+parallel = true
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
