@@ -173,20 +173,17 @@ class TestServerErrors:
 
 
 class TestAuthErrors:
-    def test_expired_cookie(self, server: str, root: str):
-        """Using an invalid cookie — should fail or return empty, not crash."""
-        result = _run("--cookie", "JSESSIONID=INVALID_EXPIRED_SESSION", "ls", f"{server}:{root}")
-        # Server may return 401 (fail) or an empty/different listing (succeed with no data)
-        # The key assertion: it doesn't crash with a traceback
+    def test_login_with_invalid_cookie(self, server: str):
+        """Logging in with an expired cookie — should save but session check may fail."""
+        result = _run("login", "--cookie", "JSESSIONID=INVALID_EXPIRED_SESSION", server)
+        # Server may accept (returns empty listing) or reject
+        # The key assertion: no crash
         assert "Traceback" not in result.stderr
 
-    def test_empty_cookie(self, server: str, root: str):
-        """Using an empty cookie string."""
-        result = _run("--cookie", "", "ls", f"{server}:{root}")
-        # Should fall back to saved cookies or browser extraction
-        # If those work, it succeeds; if not, it fails — either is OK
-        # The point is it doesn't crash
-        assert result.returncode in (0, 1)
+    def test_login_with_empty_cookie(self, server: str):
+        """Logging in with empty cookie — should fail gracefully."""
+        result = _run("login", "--cookie", "", server)
+        assert "Traceback" not in result.stderr
 
     def test_login_unreachable_server(self):
         """Login to a server that doesn't exist."""

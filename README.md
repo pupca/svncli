@@ -46,11 +46,11 @@ svncli login https://your-server.example.com
 # Interactive login — opens a browser window (works with SSO/MFA)
 svncli login -i https://your-server.example.com
 
-# Manual cookie — paste from browser DevTools (Network tab → Copy as cURL → extract cookie)
-svncli --cookie "JSESSIONID=ABC123; X-CSRF-Token=DEF456" ls https://your-server.example.com:MyProject
+# Manual cookie — paste from browser DevTools
+svncli login --cookie "JSESSIONID=ABC123; X-CSRF-Token=DEF456" https://your-server.example.com
 ```
 
-Sessions are saved to `~/.svncli/cookies.json` — you only need to log in once per server.
+All methods save the session to `~/.svncli/cookies.json` — you only need to log in once per server. After that, all commands just work.
 
 ### 2. Browse
 
@@ -136,7 +136,6 @@ Local paths start with `/`, `./`, or `~/`:
 ## Global options
 
 ```
---cookie STRING    Browser cookie string (for manual auth)
 --browser NAME     Browser for cookie extraction (default: chrome)
 --no-verify-ssl    Disable SSL certificate verification
 --timeout SECONDS  HTTP request timeout (default: 60)
@@ -194,15 +193,13 @@ If neither automatic nor interactive login works, you can extract cookies manual
 7. In the **Headers** section, find the `Cookie` request header
 8. Copy the entire cookie value string (e.g. `JSESSIONID=ABC123; X-CSRF-Token=DEF456; ...`)
 
-Then pass it to svncli:
+Then save it with `svncli login`:
 
 ```bash
-# Via flag
-svncli --cookie "JSESSIONID=ABC123; X-CSRF-Token=DEF456" ls MyProject
-
-# Or via environment variable (recommended — avoids repeating it)
-svncli --cookie "JSESSIONID=ABC123; X-CSRF-Token=DEF456" ls https://your-server.com:MyProject
+svncli login --cookie "JSESSIONID=ABC123; X-CSRF-Token=DEF456" https://your-server.com
 ```
+
+After this, all commands to that server will use the saved session automatically.
 
 > **Tip:** In Chrome, you can also right-click a request in the Network tab → **Copy → Copy as cURL**, then extract the cookie value from the `-b` or `--cookie` flag in the copied command.
 

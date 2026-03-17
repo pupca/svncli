@@ -32,22 +32,16 @@ def _extract_domain(base_url: str) -> str:
 
 
 def _resolve_cookie(server: str, args: argparse.Namespace) -> str:
-    """Resolve cookie string for a server, from multiple sources."""
+    """Resolve cookie string for a server from saved cookies or browser."""
     verbose = getattr(args, "verbose", False)
 
-    # 1. Explicit cookie (only applies if there's one server)
-    cookie = getattr(args, "cookie", None) or ""
-    if cookie:
-        log_verbose(f"Using cookie from --cookie for {server}", verbose)
-        return cookie
-
-    # 2. Saved cookies from previous login
+    # 1. Saved cookies from previous login
     cookie = load_saved_cookies(server)
     if cookie:
         log_verbose(f"Using saved cookies for {server}", verbose)
         return cookie
 
-    # 3. Auto-extract from browser
+    # 2. Auto-extract from browser
     browser = getattr(args, "browser", None) or "chrome"
     domain = _extract_domain(server)
     try:
@@ -57,9 +51,12 @@ def _resolve_cookie(server: str, args: argparse.Namespace) -> str:
     except SVNWebClientError:
         pass
 
-    # 4. Nothing found
-    print(f"Error: no session cookies found for {server}.", file=sys.stderr)
-    print(f"Run: svncli login {server}", file=sys.stderr)
+    # 3. Nothing found
+    print(f"Error: not authenticated to {server}.", file=sys.stderr)
+    print("Run one of:", file=sys.stderr)
+    print(f"  svncli login {server}", file=sys.stderr)
+    print(f"  svncli login -i {server}", file=sys.stderr)
+    print(f'  svncli login --cookie "JSESSIONID=..." {server}', file=sys.stderr)
     sys.exit(1)
 
 
@@ -352,8 +349,15 @@ def cmd_login(args: argparse.Namespace) -> None:
         sys.exit(1)
     verify_ssl = not args.no_verify_ssl
     timeout = getattr(args, "timeout", 60)
+    manual_cookie = getattr(args, "cookie", None)
 
-    if getattr(args, "interactive", False):
+    if manual_cookie:
+        # Method 3: manual cookie string
+        cookie = manual_cookie
+        save_cookies(server, cookie)
+        print(f"Cookie saved for {server}")
+    elif getattr(args, "interactive", False):
+        # Method 2: interactive browser login
         try:
             cookie = interactive_login(server)
         except SVNWebClientError as e:
@@ -361,13 +365,16 @@ def cmd_login(args: argparse.Namespace) -> None:
             sys.exit(1)
         print(f"Cookies saved for {server}")
     else:
+        # Method 1: auto-extract from browser
         domain = _extract_domain(server)
         browser = getattr(args, "browser", None) or "chrome"
         try:
             cookie = extract_browser_cookies(domain, browser)
         except SVNWebClientError as e:
             print(f"Could not extract cookies from {browser}: {e}", file=sys.stderr)
-            print(f"Hint: use 'svncli login -i {server}' for interactive login", file=sys.stderr)
+            print("Try one of:", file=sys.stderr)
+            print(f"  svncli login -i {server}", file=sys.stderr)
+            print(f'  svncli login --cookie "JSESSIONID=..." {server}', file=sys.stderr)
             sys.exit(1)
 
         cookie_names = [p.split("=")[0].strip() for p in cookie.split(";")]
@@ -542,7 +549,6 @@ def build_parser() -> argparse.ArgumentParser:
         description="CLI tool for syncing files with Polarion SVN",
     )
     parser.add_argument("--version", action="version", version="%(prog)s 1.0.0")
-    parser.add_argument("--cookie", help="Browser cookie string")
     parser.add_argument("--browser", default="chrome", help="Browser for cookie extraction (default: chrome)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument("--no-verify-ssl", action="store_true", help="Disable SSL certificate verification")
@@ -578,6 +584,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_login = sub.add_parser("login", help="Authenticate and save session cookies")
     p_login.add_argument("server", nargs="?", help="Server URL (e.g. https://your-server.com)")
     p_login.add_argument("-i", "--interactive", action="store_true", help="Open browser window for interactive login")
+    p_login.add_argument("--cookie", help="Save a cookie string directly (from browser DevTools)")
     p_login.set_defaults(func=cmd_login)
 
     # logout
