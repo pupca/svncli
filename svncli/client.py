@@ -33,26 +33,32 @@ def extract_browser_cookies(domain: str, browser: str = "chrome") -> str:
     Returns a cookie header string like 'name=value; name2=value2'.
     """
     try:
-        import rookiepy
+        import browser_cookie3
     except ImportError as err:
         raise SVNWebClientError(
-            "rookiepy is required for browser cookie extraction. Install it with: pip install rookiepy"
+            "browser-cookie3 is required for browser cookie extraction. "
+            "Install it with: pip install browser-cookie3"
         ) from err
 
-    browser_fn = getattr(rookiepy, browser, None)
+    browser_fn = getattr(browser_cookie3, browser, None)
     if browser_fn is None:
         raise SVNWebClientError(
             f"Unknown browser: {browser}. "
-            f"Supported: chrome, firefox, brave, edge, chromium, safari, arc, vivaldi, opera"
+            f"Supported: chrome, firefox, opera, edge, chromium, brave, vivaldi, safari"
         )
 
-    cookies = browser_fn(domains=[domain])
+    try:
+        cj = browser_fn(domain_name=domain)
+    except Exception as e:
+        raise SVNWebClientError(f"Failed to extract cookies from {browser}: {e}") from e
+
+    cookies = [c for c in cj if domain in (c.domain or "")]
     if not cookies:
         raise SVNWebClientError(
             f"No cookies found for {domain} in {browser}. Make sure you are logged in via the browser first."
         )
 
-    return "; ".join(f"{c['name']}={c['value']}" for c in cookies)
+    return "; ".join(f"{c.name}={c.value}" for c in cookies)
 
 
 def interactive_login(base_url: str) -> str:
