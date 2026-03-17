@@ -228,6 +228,54 @@ svncli --no-verify-ssl ls MyProject
 ```
 
 
+## Python API
+
+svncli can be used as a Python library:
+
+```python
+from svncli import PolarionSVNClient
+
+client = PolarionSVNClient(verify_ssl=False)
+
+# Authenticate (saved to ~/.svncli/cookies.json)
+client.login("https://server.com")                            # auto-extract from Chrome
+client.login("https://server.com", browser="edge")            # specific browser
+client.login("https://server.com", cookie="JSESSIONID=...")   # manual cookie
+client.login("https://server.com", interactive=True)           # opens browser window
+
+# List files
+items = client.ls("https://server.com:Project/trunk")
+for item in items:
+    print(f"{item.name}  {item.size} bytes  r{item.revision}")
+
+# Copy a single file
+client.cp("./report.pdf", "https://server.com:Project/docs/report.pdf")   # upload
+client.cp("https://server.com:Project/docs/report.pdf", "./report.pdf")   # download
+
+# Copy a directory recursively
+actions = client.cp_r("./src", "https://server.com:Project/trunk/src")
+
+# Sync with options
+actions = client.sync("./src", "https://server.com:Project/trunk/src",
+    delete=True,                     # remove remote files not in local
+    exclude=["*.log", ".git/*"],     # exclude patterns
+    dry_run=True,                    # preview only, don't execute
+)
+
+# Inspect what happened
+from svncli import SyncOp
+uploaded = [a for a in actions if a.op == SyncOp.UPLOAD]
+skipped = [a for a in actions if a.op == SyncOp.SKIP]
+
+# Cross-server sync
+client.login("https://other-server.com")
+client.sync("https://server.com:Project/src", "https://other-server.com:Project/src")
+
+# Create / delete
+client.mkdir("https://server.com:Project/new-folder")   # returns True
+client.rm("https://server.com:Project/old-file.txt")     # returns True
+```
+
 ## Development
 
 ```bash
