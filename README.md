@@ -240,10 +240,17 @@ pip install -e ".[dev]"
 # Run unit tests (no server needed)
 pytest tests/test_sync.py tests/test_client.py tests/test_models.py tests/test_util.py -v
 
-# Run full suite including E2E (requires server access)
-export SVNCLI_SERVER="https://your-server.example.com"
-export SVNCLI_E2E_ROOT="TestProject"
+# Run full suite including E2E (requires access to two Polarion servers)
+export SVNCLI_SERVER_A="https://your-server.example.com"
+export SVNCLI_ROOT_A="ProjectRoot"
+export SVNCLI_SERVER_B="https://your-other-server.example.com"
+export SVNCLI_ROOT_B="OtherProjectRoot"
 pytest tests/ -v --cov=svncli --cov-report=html
+
+# Run E2E with one server only (cross-server tests will be skipped)
+export SVNCLI_SERVER_A="https://your-server.example.com"
+export SVNCLI_ROOT_A="ProjectRoot"
+pytest tests/ -v
 ```
 
 ## License
