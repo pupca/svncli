@@ -136,7 +136,6 @@ Local paths start with `/`, `./`, or `~/`:
 ## Global options
 
 ```
---browser NAME     Browser for cookie extraction (default: chrome)
 --no-verify-ssl    Disable SSL certificate verification
 --timeout SECONDS  HTTP request timeout (default: 60)
 -v, --verbose      Verbose output
@@ -162,11 +161,14 @@ Each server has its own saved session. svncli resolves cookies per server in thi
 
 ### Automatic cookie extraction
 
-By default, svncli reads cookies directly from your Chrome cookie store. This requires that you've already logged into Polarion in Chrome. To use a different browser:
+By default, svncli reads cookies from your Chrome cookie store. This requires that you've already logged into Polarion in Chrome. To use a different browser:
 
 ```bash
-svncli --browser firefox login https://your-server.com
+svncli login --browser firefox https://your-server.com
+svncli login --browser edge https://your-server.com    # common on Windows
 ```
+
+Supported browsers: `chrome`, `firefox`, `edge`, `brave`, `opera`, `chromium`, `vivaldi`, `safari`, `librewolf`, `arc`.
 
 ### Interactive login
 

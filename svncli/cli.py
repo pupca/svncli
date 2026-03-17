@@ -549,7 +549,6 @@ def build_parser() -> argparse.ArgumentParser:
         description="CLI tool for syncing files with Polarion SVN",
     )
     parser.add_argument("--version", action="version", version="%(prog)s 1.0.0")
-    parser.add_argument("--browser", default="chrome", help="Browser for cookie extraction (default: chrome)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument("--no-verify-ssl", action="store_true", help="Disable SSL certificate verification")
     parser.add_argument("--timeout", type=int, default=60, help="HTTP request timeout in seconds (default: 60)")
@@ -582,9 +581,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     # login
     p_login = sub.add_parser("login", help="Authenticate and save session cookies")
+    _browsers = ["chrome", "firefox", "edge", "brave", "opera", "chromium", "vivaldi", "safari", "librewolf", "arc"]
     p_login.add_argument("server", nargs="?", help="Server URL (e.g. https://your-server.com)")
     p_login.add_argument("-i", "--interactive", action="store_true", help="Open browser window for interactive login")
     p_login.add_argument("--cookie", help="Save a cookie string directly (from browser DevTools)")
+    p_login.add_argument(
+        "--browser",
+        default="chrome",
+        choices=_browsers,
+        help="Browser to extract cookies from (default: chrome)",
+    )
     p_login.set_defaults(func=cmd_login)
 
     # logout
