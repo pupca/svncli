@@ -17,7 +17,7 @@ import requests
 import urllib3
 
 from .models import RemoteItem
-from .util import encode_svn_path, normalize_remote_path
+from .util import encode_svn_path, normalize_remote_path, split_remote_path
 
 # ── Browser cookie extraction ───────────────────────────────────────
 
@@ -345,12 +345,7 @@ class SVNWebClient:
         e.g. "Repo/folder/file.txt". The parent directory must exist.
         """
         remote_path = normalize_remote_path(remote_path)
-        # Parent dir is the upload target, filename comes from the file
-        parts = remote_path.rsplit("/", 1)
-        if len(parts) == 2:
-            parent_path, filename = parts
-        else:
-            parent_path, filename = "", parts[0]
+        parent_path, filename = split_remote_path(remote_path)
 
         url = self._url("fileAddAction.jsp", parent_path)
         with open(local_path, "rb") as f:
@@ -380,19 +375,14 @@ class SVNWebClient:
             resp = self.session.post(url, files=files, data=data, allow_redirects=True, timeout=self.timeout)
         try:
             self._check_response(resp)
-        except (SVNWebClientError, Exception):
+        except (SVNWebClientError, requests.exceptions.RequestException):
             # Fall back to add
             self.upload_file(remote_path, local_path, commit_message)
 
     def mkdir(self, remote_path: str, commit_message: str = "Directory was added remotely") -> None:
         """Create a remote directory."""
         remote_path = normalize_remote_path(remote_path)
-        # Parent is the url param, new dir name is the form field
-        parts = remote_path.rsplit("/", 1)
-        if len(parts) == 2:
-            parent_path, dirname = parts
-        else:
-            parent_path, dirname = "", parts[0]
+        parent_path, dirname = split_remote_path(remote_path)
 
         url = self._url("directoryAddAction.jsp", parent_path)
         data = {"directoryname": dirname, "comment": commit_message}

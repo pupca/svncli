@@ -18,10 +18,6 @@ class RemoteItem:
     author: str | None = None
     comment: str | None = None
 
-    @property
-    def path_parts(self) -> list[str]:
-        return self.path.split("/")
-
 
 class SyncOp(str, Enum):
     UPLOAD = "upload"

@@ -21,8 +21,8 @@ from .client import (
     save_cookies,
 )
 from .models import RemoteItem, SyncAction, SyncOp
-from .sync import _file_state, build_local_manifest, plan_sync_download, plan_sync_upload, save_manifest
-from .util import fmt_size, log_verbose, normalize_remote_path
+from .sync import _file_state, _rel_path, build_local_manifest, plan_sync_download, plan_sync_upload, save_manifest
+from .util import fmt_size, log_verbose, normalize_remote_path, split_remote_path
 
 
 def _resolve_base_url(args: argparse.Namespace) -> str:
@@ -335,10 +335,8 @@ def cmd_rm(args: argparse.Namespace) -> None:
     client = get_client(args)
     remote_path = normalize_remote_path(args.path)
     # Split into parent dir + item name
-    parts = remote_path.rsplit("/", 1)
-    if len(parts) == 2:
-        parent, name = parts
-    else:
+    parent, name = split_remote_path(remote_path)
+    if not parent:
         print("Error: cannot delete repository root", file=sys.stderr)
         sys.exit(1)
     if getattr(args, "dry_run", False):
@@ -412,9 +410,9 @@ def _execute_actions(client: SVNWebClient, actions: list[SyncAction], args: argp
                 if action.local_path:
                     Path(action.local_path).unlink(missing_ok=True)
                 else:
-                    parts = action.remote_path.rsplit("/", 1)
-                    if len(parts) == 2:
-                        client.delete_items(parts[0], [parts[1]])
+                    parent, name = split_remote_path(action.remote_path)
+                    if parent:
+                        client.delete_items(parent, [name])
             print(" ok")
         except (SVNWebClientError, requests.exceptions.RequestException, OSError) as e:
             print(f" FAILED: {e}", file=sys.stderr)
@@ -441,7 +439,7 @@ def _save_sync_manifest(
     remote_revisions: dict[str, int | None] = {}
     for item in remote_items:
         if not item.is_dir:
-            rel = item.path[len(remote_prefix) :] if item.path.startswith(remote_prefix) else item.name
+            rel = _rel_path(item.path, remote_prefix, item.name)
             remote_revisions[rel] = item.revision
 
     local_manifest = build_local_manifest(local_dir)

@@ -15,7 +15,7 @@ MANIFEST_DIR = Path.home() / ".svncli" / "manifests"
 # ── Sync manifest (persisted state from last sync) ──────────────────
 
 
-def _manifest_key(local_dir: Path, remote_path: str = "") -> str:
+def _manifest_key(local_dir: Path) -> str:
     """Generate a unique manifest filename from the local directory path."""
     key = str(local_dir.resolve())
     return hashlib.sha256(key.encode()).hexdigest()[:16]
@@ -106,6 +106,11 @@ def _matches_any(path: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(path, pattern) or fnmatch.fnmatch(path.split("/")[-1], pattern) for pattern in patterns)
 
 
+def _rel_path(item_path: str, prefix: str, fallback: str) -> str:
+    """Extract relative path from a full remote path given a prefix."""
+    return item_path[len(prefix) :] if item_path.startswith(prefix) else fallback
+
+
 # ── Upload sync planning ────────────────────────────────────────────
 
 
@@ -126,7 +131,7 @@ def plan_sync_upload(
     remote_manifest: dict[str, RemoteItem] = {}
     remote_dirs: set[str] = set()
     for item in remote_items:
-        rel = item.path[len(remote_prefix) :] if item.path.startswith(remote_prefix) else item.name
+        rel = _rel_path(item.path, remote_prefix, item.name)
         if item.is_dir:
             remote_dirs.add(rel)
         else:
@@ -181,8 +186,7 @@ def plan_sync_upload(
                         )
                     )
             else:
-                # No previous state — compare by content hash
-                _hash_file(local_path)
+                # No previous state — compare by size
                 local_size = local_path.stat().st_size
                 if remote_item.size is not None and local_size == remote_item.size:
                     # Same size, assume same content on first sync
@@ -266,7 +270,7 @@ def plan_sync_download(
     for item in remote_items:
         if item.is_dir:
             continue
-        rel = item.path[len(remote_prefix) :] if item.path.startswith(remote_prefix) else item.name
+        rel = _rel_path(item.path, remote_prefix, item.name)
         local_path = local_dir / rel
         prev_state = prev_files.get(rel)
 
@@ -343,7 +347,7 @@ def plan_sync_download(
         remote_files = set()
         for item in remote_items:
             if not item.is_dir:
-                rel = item.path[len(remote_prefix) :] if item.path.startswith(remote_prefix) else item.name
+                rel = _rel_path(item.path, remote_prefix, item.name)
                 remote_files.add(rel)
         for rel_path in sorted(local_manifest):
             if rel_path not in remote_files:

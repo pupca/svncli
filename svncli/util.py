@@ -29,6 +29,14 @@ def fmt_size(size: int | None) -> str:
     return f"{size:.1f}TB"
 
 
+def split_remote_path(remote_path: str) -> tuple[str, str]:
+    """Split a remote path into (parent, name). Returns ("", name) for root-level items."""
+    parts = remote_path.rsplit("/", 1)
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return "", parts[0]
+
+
 def log_verbose(msg: str, verbose: bool) -> None:
     if verbose:
         print(msg, file=sys.stderr)
