@@ -21,13 +21,13 @@ def _get_env(name: str) -> str:
 
 @pytest.fixture(scope="module")
 def server() -> str:
-    return _get_env("SVNCLI_SERVER")
+    return _get_env("SVNCLI_SERVER_A")
 
 
 @pytest.fixture(scope="module")
 def e2e_root(server: str) -> str:
     """Return server:root_path prefix for remote paths."""
-    root = _get_env("SVNCLI_E2E_ROOT")
+    root = _get_env("SVNCLI_ROOT_A")
     return f"{server}:{root}"
 
 
