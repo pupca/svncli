@@ -35,32 +35,62 @@ pip install -e ".[dev]"
 
 ## Quick start
 
+### 1. Authenticate
+
+Pick one of these methods:
+
 ```bash
-# Authenticate (extracts cookies from Chrome automatically)
+# Auto-extract cookies from Chrome (requires being logged in via browser)
 svncli login https://your-server.example.com
 
-# Or use interactive browser login (works with SSO/MFA)
+# Interactive login — opens a browser window (works with SSO/MFA)
 svncli login -i https://your-server.example.com
 
-# List files
-svncli ls https://your-server.example.com:MyProject/trunk
+# Manual cookie — paste from browser DevTools (Network tab → Copy as cURL → extract cookie)
+svncli --cookie "JSESSIONID=ABC123; X-CSRF-Token=DEF456" ls https://your-server.example.com:MyProject
+```
 
-# Upload a file
+Sessions are saved to `~/.svncli/cookies.json` — you only need to log in once per server.
+
+### 2. Browse
+
+```bash
+svncli ls https://your-server.example.com:MyProject/trunk
+svncli ls -r https://your-server.example.com:MyProject/trunk   # recursive
+```
+
+### 3. Copy files
+
+```bash
+# Upload
 svncli cp ./report.pdf https://your-server.example.com:MyProject/trunk/docs/report.pdf
 
-# Download a file
+# Download
 svncli cp https://your-server.example.com:MyProject/trunk/docs/report.pdf ./report.pdf
 
-# Sync a local folder to remote
+# Copy a whole folder
+svncli cp -r ./local-folder https://your-server.example.com:MyProject/trunk/folder
+```
+
+### 4. Sync
+
+```bash
+# Push local changes to remote
 svncli sync ./src https://your-server.example.com:MyProject/trunk/src
 
-# Sync remote to local
+# Pull remote changes to local
 svncli sync https://your-server.example.com:MyProject/trunk/src ./src
 
-# Preview changes without applying
+# Preview what would change
 svncli sync -n ./src https://your-server.example.com:MyProject/trunk/src
 
-# Copy between two Polarion servers
+# Delete remote files not present locally
+svncli sync --delete --force ./src https://your-server.example.com:MyProject/trunk/src
+```
+
+### 5. Cross-server copy
+
+```bash
 svncli cp -r https://server1.com:Project/src https://server2.com:Project/src
 ```
 
