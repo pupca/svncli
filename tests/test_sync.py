@@ -5,11 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+import pytest
+
 from svncli.models import RemoteItem, SyncOp
 from svncli.sync import (
-    MANIFEST_FILE,
     _hash_file,
     _is_local_unchanged,
+    _manifest_path,
     _matches_any,
     build_local_manifest,
     load_manifest,
@@ -17,6 +19,16 @@ from svncli.sync import (
     plan_sync_upload,
     save_manifest,
 )
+
+# ── Fixtures ─────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _isolate_manifests(tmp_path_factory, monkeypatch):
+    """Store manifests in a separate temp dir, not ~/.svncli/manifests/."""
+    manifest_dir = tmp_path_factory.mktemp("svncli_manifests")
+    monkeypatch.setattr("svncli.sync.MANIFEST_DIR", manifest_dir)
+
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -49,12 +61,11 @@ class TestBuildLocalManifest:
         manifest = build_local_manifest(tmp_path)
         assert set(manifest.keys()) == {"a.txt", "sub/b.txt"}
 
-    def test_excludes_manifest_file(self, tmp_path: Path):
+    def test_includes_all_files(self, tmp_path: Path):
         _write_file(tmp_path / "a.txt")
-        _write_file(tmp_path / MANIFEST_FILE, '{"files":{}}')
+        _write_file(tmp_path / "data.json")
         manifest = build_local_manifest(tmp_path)
-        assert MANIFEST_FILE not in manifest
-        assert "a.txt" in manifest
+        assert set(manifest.keys()) == {"a.txt", "data.json"}
 
     def test_exclude_patterns(self, tmp_path: Path):
         _write_file(tmp_path / "a.txt")
@@ -97,22 +108,41 @@ class TestMatchesAny:
 
 class TestManifest:
     def test_save_and_load(self, tmp_path: Path):
+        local_dir = tmp_path / "project"
+        local_dir.mkdir()
         states = {
             "a.txt": {"revision": 5, "size": 100, "local_hash": "sha256:abc", "local_mtime": 1.0},
         }
-        save_manifest(tmp_path, "Repo/folder", states)
-        loaded = load_manifest(tmp_path)
+        save_manifest(local_dir, "Repo/folder", states)
+        loaded = load_manifest(local_dir)
         assert loaded["remote_path"] == "Repo/folder"
         assert loaded["files"]["a.txt"]["revision"] == 5
+        assert loaded["local_dir"] == str(local_dir.resolve())
 
     def test_load_missing(self, tmp_path: Path):
         loaded = load_manifest(tmp_path)
         assert loaded == {"remote_path": "", "files": {}}
 
     def test_load_corrupt(self, tmp_path: Path):
-        (tmp_path / MANIFEST_FILE).write_text("not json{{{")
-        loaded = load_manifest(tmp_path)
+        local_dir = tmp_path / "project"
+        local_dir.mkdir()
+        manifest_path = _manifest_path(local_dir)
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text("not json{{{")
+        loaded = load_manifest(local_dir)
         assert loaded == {"remote_path": "", "files": {}}
+
+    def test_manifest_stored_outside_project(self, tmp_path: Path):
+        """Manifest should NOT be in the project directory."""
+        local_dir = tmp_path / "project"
+        local_dir.mkdir()
+        save_manifest(local_dir, "Repo/folder", {"a.txt": {}})
+        # No manifest file in the project dir
+        assert not any(f.name.endswith(".json") for f in local_dir.iterdir())
+        # Manifest exists somewhere in the test manifests dir
+        manifest_dir = _manifest_path(local_dir).parent
+        assert manifest_dir.exists()
+        assert any(f.name.endswith(".json") for f in manifest_dir.iterdir())
 
 
 # ── _hash_file ──────────────────────────────────────────────────────

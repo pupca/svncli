@@ -9,21 +9,31 @@ from pathlib import Path
 
 from .models import RemoteItem, SyncAction, SyncOp
 
-MANIFEST_FILE = ".svncli.json"
+MANIFEST_DIR = Path.home() / ".svncli" / "manifests"
 
 
 # ── Sync manifest (persisted state from last sync) ──────────────────
 
 
+def _manifest_key(local_dir: Path, remote_path: str = "") -> str:
+    """Generate a unique manifest filename from the local directory path."""
+    key = str(local_dir.resolve())
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
 def _manifest_path(local_dir: Path) -> Path:
-    return local_dir / MANIFEST_FILE
+    return MANIFEST_DIR / f"{_manifest_key(local_dir)}.json"
 
 
 def load_manifest(local_dir: Path) -> dict:
     """Load the sync manifest from a previous sync.
 
+    Manifests are stored in ~/.svncli/manifests/ keyed by a hash of the
+    local directory path. This keeps the user's working directory clean.
+
     Returns dict like:
     {
+        "local_dir": "/abs/path/to/dir",
         "remote_path": "Repo/folder",
         "files": {
             "relative/path.txt": {
@@ -45,13 +55,16 @@ def load_manifest(local_dir: Path) -> dict:
 
 
 def save_manifest(local_dir: Path, remote_path: str, file_states: dict[str, dict]) -> None:
-    """Save sync manifest after a successful sync."""
+    """Save sync manifest to ~/.svncli/manifests/."""
     manifest = {
+        "local_dir": str(local_dir.resolve()),
         "remote_path": remote_path,
         "files": file_states,
     }
     path = _manifest_path(local_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
+    path.chmod(0o600)
 
 
 def _hash_file(path: Path) -> str:
@@ -80,7 +93,7 @@ def build_local_manifest(local_dir: Path, exclude: list[str] | None = None) -> d
     """Walk local directory, return {relative_posix_path: absolute_local_path}."""
     manifest: dict[str, Path] = {}
     for item in sorted(local_dir.rglob("*")):
-        if item.is_file() and item.name != MANIFEST_FILE:
+        if item.is_file():
             rel = item.relative_to(local_dir).as_posix()
             if exclude and _matches_any(rel, exclude):
                 continue

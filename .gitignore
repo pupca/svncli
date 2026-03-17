@@ -28,7 +28,6 @@ htmlcov/
 Thumbs.db
 
 # svncli
-.svncli.json
 har/
 myfolder/
 .ruff_cache/

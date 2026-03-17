@@ -160,7 +160,7 @@ svncli ls MyProject
 
 ## How sync works
 
-svncli tracks sync state in a `.svncli.json` manifest file in the local directory. On each sync:
+svncli tracks sync state in manifest files stored in `~/.svncli/manifests/`. On each sync:
 
 1. **First sync** — compares by file size; uploads/downloads differences
 2. **Subsequent syncs** — uses SVN revision numbers + local file SHA-256 hashes:
