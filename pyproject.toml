@@ -28,7 +28,7 @@ dev = ["pytest>=7", "pytest-cov>=4", "playwright>=1.40", "ruff>=0.4"]
 [project.urls]
 Homepage = "https://github.com/pupca/svncli"
 Issues = "https://github.com/pupca/svncli/issues"
-Changelog = "https://github.com/pupca/svncli/blob/main/CHANGELOG.md"
+Changelog = "https://github.com/pupca/svncli/blob/master/CHANGELOG.md"
 
 [project.scripts]
 svncli = "svncli.cli:main"
