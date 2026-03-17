@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import zipfile
 from io import BytesIO
@@ -37,9 +36,9 @@ def _resolve_cookie(server: str, args: argparse.Namespace) -> str:
     verbose = getattr(args, "verbose", False)
 
     # 1. Explicit cookie (only applies if there's one server)
-    cookie = args.cookie or os.environ.get("SVNCLI_COOKIE", "")
+    cookie = getattr(args, "cookie", None) or ""
     if cookie:
-        log_verbose(f"Using cookie from --cookie/SVNCLI_COOKIE for {server}", verbose)
+        log_verbose(f"Using cookie from --cookie for {server}", verbose)
         return cookie
 
     # 2. Saved cookies from previous login
@@ -49,7 +48,7 @@ def _resolve_cookie(server: str, args: argparse.Namespace) -> str:
         return cookie
 
     # 3. Auto-extract from browser
-    browser = getattr(args, "browser", None) or os.environ.get("SVNCLI_BROWSER", "chrome")
+    browser = getattr(args, "browser", None) or "chrome"
     domain = _extract_domain(server)
     try:
         cookie = extract_browser_cookies(domain, browser)
@@ -363,7 +362,7 @@ def cmd_login(args: argparse.Namespace) -> None:
         print(f"Cookies saved for {server}")
     else:
         domain = _extract_domain(server)
-        browser = args.browser or os.environ.get("SVNCLI_BROWSER", "chrome")
+        browser = getattr(args, "browser", None) or "chrome"
         try:
             cookie = extract_browser_cookies(domain, browser)
         except SVNWebClientError as e:
@@ -543,8 +542,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="CLI tool for syncing files with Polarion SVN",
     )
     parser.add_argument("--version", action="version", version="%(prog)s 1.0.0")
-    parser.add_argument("--cookie", help="Browser cookie string (or SVNCLI_COOKIE env)")
-    parser.add_argument("--browser", help="Browser to extract cookies from (default: chrome, or SVNCLI_BROWSER env)")
+    parser.add_argument("--cookie", help="Browser cookie string")
+    parser.add_argument("--browser", default="chrome", help="Browser for cookie extraction (default: chrome)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument("--no-verify-ssl", action="store_true", help="Disable SSL certificate verification")
     parser.add_argument("--timeout", type=int, default=60, help="HTTP request timeout in seconds (default: 60)")
@@ -608,6 +607,9 @@ def main() -> None:
         args.func(args)
     except SVNWebClientError as e:
         print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except requests.exceptions.RequestException as e:
+        print(f"Error: network request failed: {e}", file=sys.stderr)
         sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(130)

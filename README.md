@@ -136,8 +136,8 @@ Local paths start with `/`, `./`, or `~/`:
 ## Global options
 
 ```
---cookie STRING    Cookie string (or SVNCLI_COOKIE env)
---browser NAME     Browser for cookie extraction (or SVNCLI_BROWSER env, default: chrome)
+--cookie STRING    Browser cookie string (for manual auth)
+--browser NAME     Browser for cookie extraction (default: chrome)
 --no-verify-ssl    Disable SSL certificate verification
 --timeout SECONDS  HTTP request timeout (default: 60)
 -v, --verbose      Verbose output
@@ -157,7 +157,7 @@ Local paths start with `/`, `./`, or `~/`:
 
 Each server has its own saved session. svncli resolves cookies per server in this order:
 
-1. `--cookie` flag or `SVNCLI_COOKIE` environment variable
+1. `--cookie` flag
 2. Saved cookies from `~/.svncli/cookies.json` (from a previous `svncli login`)
 3. Auto-extraction from browser cookie store (Chrome, Firefox, Edge, Safari, etc.)
 
@@ -167,8 +167,6 @@ By default, svncli reads cookies directly from your Chrome cookie store. This re
 
 ```bash
 svncli --browser firefox login https://your-server.com
-# or
-export SVNCLI_BROWSER=firefox
 ```
 
 ### Interactive login
@@ -203,8 +201,7 @@ Then pass it to svncli:
 svncli --cookie "JSESSIONID=ABC123; X-CSRF-Token=DEF456" ls MyProject
 
 # Or via environment variable (recommended — avoids repeating it)
-export SVNCLI_COOKIE="JSESSIONID=ABC123; X-CSRF-Token=DEF456"
-svncli ls MyProject
+svncli --cookie "JSESSIONID=ABC123; X-CSRF-Token=DEF456" ls https://your-server.com:MyProject
 ```
 
 > **Tip:** In Chrome, you can also right-click a request in the Network tab → **Copy → Copy as cURL**, then extract the cookie value from the `-b` or `--cookie` flag in the copied command.
@@ -231,12 +228,6 @@ For servers with self-signed or corporate CA certificates:
 svncli --no-verify-ssl ls MyProject
 ```
 
-## Environment variables
-
-| Variable | Description |
-|----------|-------------|
-| `SVNCLI_COOKIE` | Cookie header string |
-| `SVNCLI_BROWSER` | Browser for cookie extraction (default: `chrome`) |
 
 ## Development
 
