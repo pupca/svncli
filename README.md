@@ -88,11 +88,22 @@ svncli sync -n ./src https://your-server.example.com:MyProject/trunk/src
 svncli sync --delete --force ./src https://your-server.example.com:MyProject/trunk/src
 ```
 
-### 5. Cross-server copy
+### 5. Cross-server operations
+
+Copy or sync files directly between two Polarion servers — no manual download/upload needed:
 
 ```bash
+# Copy a folder from one server to another
 svncli cp -r https://server1.com:Project/src https://server2.com:Project/src
+
+# Sync between servers (only transfers changed files)
+svncli sync https://server1.com:Project/src https://server2.com:Project/src
+
+# Preview cross-server sync
+svncli sync -n https://server1.com:Project/src https://server2.com:Project/src
 ```
+
+This works by downloading from the source server to a temp directory, then uploading to the destination. Each server authenticates independently — run `svncli login` for each one.
 
 ## Path format
 

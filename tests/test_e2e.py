@@ -13,6 +13,7 @@ and clean up after themselves. If SERVER_B is not set, cross-server tests are sk
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -414,6 +415,99 @@ class TestCrossServer:
         assert result_b.stdout.strip()
         # They should be different content
         assert result_a.stdout != result_b.stdout
+
+    def test_sync_remote_to_remote(
+        self,
+        server_a: str,
+        root_a: str,
+        client_a: SVNWebClient,
+        server_b: str,
+        root_b: str,
+        client_b: SVNWebClient,
+        tmp_path: Path,
+    ):
+        """Sync files from server A to server B."""
+        # Create source on A
+        src_name = f"_xsync_src_{uuid.uuid4().hex[:8]}"
+        src_path = f"{root_a}/{src_name}"
+        client_a.mkdir(src_path)
+        f1 = tmp_path / "sync1.txt"
+        f1.write_text("sync content alpha")
+        f2 = tmp_path / "sync2.txt"
+        f2.write_text("sync content beta")
+        client_a.upload_file(f"{src_path}/sync1.txt", f1)
+        client_a.upload_file(f"{src_path}/sync2.txt", f2)
+
+        dst_name = f"_xsync_dst_{uuid.uuid4().hex[:8]}"
+        dst_path = f"{root_b}/{dst_name}"
+
+        try:
+            # Sync A → B (dest doesn't exist yet — should be created)
+            result = _run_cli("sync", f"{server_a}:{src_path}", f"{server_b}:{dst_path}")
+            assert "Completed" in result.stdout or "upload" in result.stdout.lower()
+
+            # Verify files on B
+            items = client_b.ls(dst_path)
+            names = sorted(i.name for i in items)
+            assert "sync1.txt" in names
+            assert "sync2.txt" in names
+
+            # Verify content
+            assert client_b.download_file_to_buffer(f"{dst_path}/sync1.txt").decode() == "sync content alpha"
+            assert client_b.download_file_to_buffer(f"{dst_path}/sync2.txt").decode() == "sync content beta"
+
+            # Second sync — should be up to date (same files already exist)
+            result2 = _run_cli("sync", f"{server_a}:{src_path}", f"{server_b}:{dst_path}")
+            assert "up to date" in result2.stdout.lower() or "0/" not in result2.stdout
+        finally:
+            client_a.delete_items(root_a, [src_name])
+            with contextlib.suppress(Exception):
+                client_b.delete_items(root_b, [dst_name])
+
+    def test_sync_remote_to_remote_with_update(
+        self,
+        server_a: str,
+        root_a: str,
+        client_a: SVNWebClient,
+        server_b: str,
+        root_b: str,
+        client_b: SVNWebClient,
+        tmp_path: Path,
+    ):
+        """Sync detects changes when source file size changes."""
+        src_name = f"_xsync_upd_src_{uuid.uuid4().hex[:8]}"
+        src_path = f"{root_a}/{src_name}"
+        client_a.mkdir(src_path)
+        f = tmp_path / "changing.txt"
+        f.write_text("short")
+        client_a.upload_file(f"{src_path}/changing.txt", f)
+
+        dst_name = f"_xsync_upd_dst_{uuid.uuid4().hex[:8]}"
+        dst_path = f"{root_b}/{dst_name}"
+
+        try:
+            # First sync
+            _run_cli("sync", f"{server_a}:{src_path}", f"{server_b}:{dst_path}")
+            assert client_b.download_file_to_buffer(f"{dst_path}/changing.txt").decode() == "short"
+
+            # Update source with different-sized content
+            f.write_text("this is a much longer version of the content")
+            client_a.update_file(f"{src_path}/changing.txt", f)
+
+            # Second sync — size changed, should update
+            result = _run_cli("sync", f"{server_a}:{src_path}", f"{server_b}:{dst_path}")
+            assert (
+                "upload" in result.stdout.lower() or "update" in result.stdout.lower() or "Completed" in result.stdout
+            )
+
+            assert (
+                client_b.download_file_to_buffer(f"{dst_path}/changing.txt").decode()
+                == "this is a much longer version of the content"
+            )
+        finally:
+            client_a.delete_items(root_a, [src_name])
+            with contextlib.suppress(Exception):
+                client_b.delete_items(root_b, [dst_name])
 
     def test_login_both_servers(self, server_a: str, server_b: str):
         """Can authenticate to both servers."""

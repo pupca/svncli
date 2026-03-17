@@ -245,9 +245,8 @@ def cmd_sync(args: argparse.Namespace) -> None:
         log_verbose("Sync direction: remote → local (download)", args.verbose)
         _sync_download(src_client, src_parsed.path, Path(dst_parsed.path), args)
     elif src_parsed.is_remote and dst_parsed.is_remote:
-        print("Error: sync between two remote servers is not yet supported.", file=sys.stderr)
-        print("Use cp -r to copy between servers.", file=sys.stderr)
-        sys.exit(1)
+        log_verbose("Sync direction: remote → remote", args.verbose)
+        _sync_remote_to_remote(src_parsed, dst_parsed, args)
     else:
         print("Error: at least one path must be remote.", file=sys.stderr)
         sys.exit(1)
@@ -298,6 +297,49 @@ def _sync_download(client: SVNWebClient, remote_path: str, local_dir: Path, args
     # Save manifest after successful sync
     if executed and not args.dry_run:
         _save_sync_manifest(local_dir, remote_path, remote_items, args.verbose)
+
+
+def _sync_remote_to_remote(src: ParsedPath, dst: ParsedPath, args: argparse.Namespace) -> None:
+    """Sync between two remote servers via a local temp directory."""
+    import tempfile
+
+    src_client = get_client_for_server(src.server, args)
+    dst_client = get_client_for_server(dst.server, args)
+
+    with tempfile.TemporaryDirectory(prefix="svncli_sync_") as tmp:
+        tmp_dir = Path(tmp)
+
+        # Step 1: download source to temp
+        log_verbose(f"Downloading from {src}...", args.verbose)
+        try:
+            src_items = src_client.ls_recursive(src.path)
+        except (SVNWebClientError, requests.exceptions.RequestException) as e:
+            print(f"Error: cannot list source {src}: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        src_prefix = src.path.rstrip("/") + "/"
+        for item in src_items:
+            if item.is_dir:
+                continue
+            rel = _rel_path(item.path, src_prefix, item.name)
+            dest = tmp_dir / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            src_client.download_file(item.path, dest)
+
+        # Step 2: sync temp to destination
+        log_verbose(f"Syncing to {dst}...", args.verbose)
+        try:
+            dst_items = dst_client.ls_recursive(dst.path)
+        except (SVNWebClientError, requests.exceptions.RequestException):
+            dst_items = []
+
+        exclude = getattr(args, "exclude", [])
+        actions = plan_sync_upload(tmp_dir, dst.path, dst_items, delete=args.delete, exclude=exclude)
+
+        if not dst_items:
+            actions.insert(0, SyncAction(op=SyncOp.MKDIR, remote_path=dst.path, reason="new directory"))
+
+        _execute_actions(dst_client, actions, args)
 
 
 # ── rm / mb ─────────────────────────────────────────────────────────
