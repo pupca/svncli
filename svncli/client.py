@@ -36,15 +36,13 @@ def extract_browser_cookies(domain: str, browser: str = "chrome") -> str:
         import browser_cookie3
     except ImportError as err:
         raise SVNWebClientError(
-            "browser-cookie3 is required for browser cookie extraction. "
-            "Install it with: pip install browser-cookie3"
+            "browser-cookie3 is required for browser cookie extraction. Install it with: pip install browser-cookie3"
         ) from err
 
     browser_fn = getattr(browser_cookie3, browser, None)
     if browser_fn is None:
         raise SVNWebClientError(
-            f"Unknown browser: {browser}. "
-            f"Supported: chrome, firefox, opera, edge, chromium, brave, vivaldi, safari"
+            f"Unknown browser: {browser}. Supported: chrome, firefox, opera, edge, chromium, brave, vivaldi, safari"
         )
 
     try:
