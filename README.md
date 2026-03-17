@@ -1,6 +1,12 @@
 # Polarion SVN CLI (svncli)
 
+[![CI](https://github.com/pupca/svncli/actions/workflows/ci.yml/badge.svg)](https://github.com/pupca/svncli/actions/workflows/ci.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%E2%80%933.14-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 CLI tool for syncing files with Polarion's SVN repository when direct SVN access is not available — such as on PolarionX or other hosted environments.
+
+Supports **macOS**, **Linux**, and **Windows**.
 
 ## Why?
 
