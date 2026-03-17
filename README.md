@@ -36,54 +36,65 @@ pip install -e ".[dev]"
 ## Quick start
 
 ```bash
-# Set your Polarion server URL
-export SVNCLI_BASE_URL="https://your-polarion-server.example.com"
-
 # Authenticate (extracts cookies from Chrome automatically)
-svncli login
+svncli login https://your-server.example.com
 
 # Or use interactive browser login (works with SSO/MFA)
-svncli login -i
+svncli login -i https://your-server.example.com
 
 # List files
-svncli ls MyProject/trunk
+svncli ls https://your-server.example.com:MyProject/trunk
 
 # Upload a file
-svncli cp ./report.pdf MyProject/trunk/docs/report.pdf
+svncli cp ./report.pdf https://your-server.example.com:MyProject/trunk/docs/report.pdf
 
 # Download a file
-svncli cp MyProject/trunk/docs/report.pdf ./report.pdf
+svncli cp https://your-server.example.com:MyProject/trunk/docs/report.pdf ./report.pdf
 
 # Sync a local folder to remote
-svncli sync ./src MyProject/trunk/src
+svncli sync ./src https://your-server.example.com:MyProject/trunk/src
 
 # Sync remote to local
-svncli sync MyProject/trunk/src ./src
+svncli sync https://your-server.example.com:MyProject/trunk/src ./src
 
 # Preview changes without applying
-svncli sync -n ./src MyProject/trunk/src
+svncli sync -n ./src https://your-server.example.com:MyProject/trunk/src
+
+# Copy between two Polarion servers
+svncli cp -r https://server1.com:Project/src https://server2.com:Project/src
+```
+
+## Path format
+
+Remote paths include the server URL followed by `:` and the repository path:
+
+```
+https://server.example.com:RepoName/folder/path
+```
+
+Local paths start with `/`, `./`, or `~/`:
+
+```
+./local-folder
+/absolute/path
+~/home-relative
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `svncli ls <path>` | List remote directory (`-r` for recursive) |
-| `svncli cp <src> <dst>` | Copy files between local and remote (`-r` for directories) |
+| `svncli ls <remote>` | List remote directory (`-r` for recursive) |
+| `svncli cp <src> <dst>` | Copy files (local↔remote or remote↔remote with `-r`) |
 | `svncli sync <src> <dst>` | Sync files between local and remote |
-| `svncli rm <path>` | Delete a remote file or folder |
-| `svncli mb <path>` | Create a remote directory |
-| `svncli login` | Authenticate and save session cookies |
-| `svncli logout` | Remove saved session cookies |
-
-**Direction is determined by path format:**
-- Local paths start with `/`, `./`, or `~`
-- Everything else is treated as a remote path
+| `svncli rm <remote>` | Delete a remote file or folder |
+| `svncli mb <remote>` | Create a remote directory |
+| `svncli login <server>` | Authenticate and save session cookies |
+| `svncli logout [server]` | Remove saved session cookies |
 
 ## Global options
 
 ```
---base-url URL     Polarion server URL (or SVNCLI_BASE_URL env)
 --cookie STRING    Cookie string (or SVNCLI_COOKIE env)
 --browser NAME     Browser for cookie extraction (or SVNCLI_BROWSER env, default: chrome)
 --no-verify-ssl    Disable SSL certificate verification
@@ -103,19 +114,18 @@ svncli sync -n ./src MyProject/trunk/src
 
 ## Authentication
 
-svncli resolves session cookies in this order:
+Each server has its own saved session. svncli resolves cookies per server in this order:
 
 1. `--cookie` flag or `SVNCLI_COOKIE` environment variable
 2. Saved cookies from `~/.svncli/cookies.json` (from a previous `svncli login`)
 3. Auto-extraction from browser cookie store (Chrome, Firefox, Edge, Safari, etc.)
-4. Interactive login (`svncli login -i`) — opens a browser window
 
 ### Automatic cookie extraction
 
 By default, svncli reads cookies directly from your Chrome cookie store. This requires that you've already logged into Polarion in Chrome. To use a different browser:
 
 ```bash
-svncli --browser firefox login
+svncli --browser firefox login https://your-server.com
 # or
 export SVNCLI_BROWSER=firefox
 ```
@@ -125,7 +135,7 @@ export SVNCLI_BROWSER=firefox
 For environments where automatic cookie extraction doesn't work (e.g., remote servers, locked-down browsers):
 
 ```bash
-svncli login -i
+svncli login -i https://your-server.com
 ```
 
 This opens a Chromium window. Log in normally (including SSO/MFA), then close the window. Cookies are saved automatically.
@@ -184,7 +194,6 @@ svncli --no-verify-ssl ls MyProject
 
 | Variable | Description |
 |----------|-------------|
-| `SVNCLI_BASE_URL` | Polarion server URL |
 | `SVNCLI_COOKIE` | Cookie header string |
 | `SVNCLI_BROWSER` | Browser for cookie extraction (default: `chrome`) |
 
@@ -201,7 +210,7 @@ pip install -e ".[dev]"
 pytest tests/test_sync.py tests/test_client.py tests/test_models.py tests/test_util.py -v
 
 # Run full suite including E2E (requires server access)
-export SVNCLI_BASE_URL="https://your-server.example.com"
+export SVNCLI_SERVER="https://your-server.example.com"
 export SVNCLI_E2E_ROOT="TestProject"
 pytest tests/ -v --cov=svncli --cov-report=html
 ```

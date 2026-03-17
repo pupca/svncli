@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 import sys
+from dataclasses import dataclass
 from urllib.parse import quote
 
 
@@ -35,6 +37,53 @@ def split_remote_path(remote_path: str) -> tuple[str, str]:
     if len(parts) == 2:
         return parts[0], parts[1]
     return "", parts[0]
+
+
+@dataclass
+class ParsedPath:
+    """A parsed path — either local or remote."""
+
+    server: str | None  # e.g. "https://host.example.com", None for local
+    path: str  # remote path or local path
+
+    @property
+    def is_local(self) -> bool:
+        return self.server is None
+
+    @property
+    def is_remote(self) -> bool:
+        return self.server is not None
+
+    def __str__(self) -> str:
+        if self.server:
+            return f"{self.server}:{self.path}"
+        return self.path
+
+
+# Matches https://host or https://host:port followed by :remote/path
+_REMOTE_RE = re.compile(r"^(https?://[^/:]+(?::\d+)?):(.*)$")
+
+
+def parse_path(raw: str) -> ParsedPath:
+    """Parse a path string into a ParsedPath.
+
+    Formats:
+        https://server.com:Repo/path  → remote (server + path)
+        /local/path, ./path, ~/path   → local
+    """
+    m = _REMOTE_RE.match(raw)
+    if m:
+        return ParsedPath(server=m.group(1), path=normalize_remote_path(m.group(2)))
+
+    if raw.startswith(("/", ".", "~")):
+        return ParsedPath(server=None, path=raw)
+
+    # Doesn't look like a URL or local path
+    raise ValueError(
+        f"Cannot parse path: {raw}\n"
+        "Remote paths must include the server: https://server.com:Repo/path\n"
+        "Local paths must start with / ./ or ~/"
+    )
 
 
 def log_verbose(msg: str, verbose: bool) -> None:

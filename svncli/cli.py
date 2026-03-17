@@ -22,15 +22,7 @@ from .client import (
 )
 from .models import RemoteItem, SyncAction, SyncOp
 from .sync import _file_state, _rel_path, build_local_manifest, plan_sync_download, plan_sync_upload, save_manifest
-from .util import fmt_size, log_verbose, normalize_remote_path, split_remote_path
-
-
-def _resolve_base_url(args: argparse.Namespace) -> str:
-    base_url = args.base_url or os.environ.get("SVNCLI_BASE_URL", "")
-    if not base_url:
-        print("Error: --base-url or SVNCLI_BASE_URL required", file=sys.stderr)
-        sys.exit(1)
-    return base_url
+from .util import ParsedPath, fmt_size, log_verbose, normalize_remote_path, parse_path, split_remote_path
 
 
 def _extract_domain(base_url: str) -> str:
@@ -40,30 +32,25 @@ def _extract_domain(base_url: str) -> str:
     return urlparse(base_url).hostname or ""
 
 
-def _resolve_cookie(args: argparse.Namespace, base_url: str) -> str:
-    """Resolve cookie string from multiple sources in priority order:
-    1. --cookie flag
-    2. SVNCLI_COOKIE env var
-    3. Saved cookies from ~/.svncli/cookies.json
-    4. Auto-extract from browser cookie store (rookiepy)
-    """
+def _resolve_cookie(server: str, args: argparse.Namespace) -> str:
+    """Resolve cookie string for a server, from multiple sources."""
     verbose = getattr(args, "verbose", False)
 
-    # 1. Explicit cookie
+    # 1. Explicit cookie (only applies if there's one server)
     cookie = args.cookie or os.environ.get("SVNCLI_COOKIE", "")
     if cookie:
-        log_verbose("Using cookie from --cookie/SVNCLI_COOKIE", verbose)
+        log_verbose(f"Using cookie from --cookie/SVNCLI_COOKIE for {server}", verbose)
         return cookie
 
     # 2. Saved cookies from previous login
-    cookie = load_saved_cookies(base_url)
+    cookie = load_saved_cookies(server)
     if cookie:
-        log_verbose("Using saved cookies from ~/.svncli/cookies.json", verbose)
+        log_verbose(f"Using saved cookies for {server}", verbose)
         return cookie
 
     # 3. Auto-extract from browser
     browser = getattr(args, "browser", None) or os.environ.get("SVNCLI_BROWSER", "chrome")
-    domain = _extract_domain(base_url)
+    domain = _extract_domain(server)
     try:
         cookie = extract_browser_cookies(domain, browser)
         log_verbose(f"Extracted cookies from {browser} for {domain}", verbose)
@@ -72,29 +59,47 @@ def _resolve_cookie(args: argparse.Namespace, base_url: str) -> str:
         pass
 
     # 4. Nothing found
-    print("Error: no session cookies found.", file=sys.stderr)
-    print("Options:", file=sys.stderr)
-    print("  svncli login              — interactive browser login", file=sys.stderr)
-    print("  --cookie 'KEY=VAL; ...'   — provide cookie string", file=sys.stderr)
-    print("  SVNCLI_COOKIE env var     — provide cookie string", file=sys.stderr)
-    print("  Log in via Chrome/Firefox — cookies are auto-extracted", file=sys.stderr)
+    print(f"Error: no session cookies found for {server}.", file=sys.stderr)
+    print(f"Run: svncli login {server}", file=sys.stderr)
     sys.exit(1)
 
 
-def get_client(args: argparse.Namespace) -> SVNWebClient:
-    base_url = _resolve_base_url(args)
-    cookie = _resolve_cookie(args, base_url)
+# ── Client cache (one per server) ───────────────────────────────────
+
+_client_cache: dict[str, SVNWebClient] = {}
+
+
+def get_client_for_server(server: str, args: argparse.Namespace) -> SVNWebClient:
+    """Get or create a client for a specific server URL."""
+    if server in _client_cache:
+        return _client_cache[server]
+    cookie = _resolve_cookie(server, args)
     verify_ssl = not args.no_verify_ssl
     timeout = getattr(args, "timeout", 60)
-    return SVNWebClient(base_url, cookie, verify_ssl=verify_ssl, timeout=timeout)
+    client = SVNWebClient(server, cookie, verify_ssl=verify_ssl, timeout=timeout)
+    _client_cache[server] = client
+    return client
+
+
+def resolve_remote(raw: str, args: argparse.Namespace) -> tuple[SVNWebClient, str]:
+    """Parse a remote path string and return (client, remote_path)."""
+    try:
+        parsed = parse_path(raw)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    if parsed.is_local:
+        print(f"Error: expected a remote path, got local: {raw}", file=sys.stderr)
+        sys.exit(1)
+    client = get_client_for_server(parsed.server, args)
+    return client, parsed.path
 
 
 # ── ls ──────────────────────────────────────────────────────────────
 
 
 def cmd_ls(args: argparse.Namespace) -> None:
-    client = get_client(args)
-    remote_path = normalize_remote_path(args.path)
+    client, remote_path = resolve_remote(args.path, args)
     items = client.ls_recursive(remote_path) if getattr(args, "recursive", False) else client.ls(remote_path)
     if not items:
         print(f"(empty directory: {remote_path})")
@@ -110,35 +115,36 @@ def cmd_ls(args: argparse.Namespace) -> None:
 
 
 def cmd_cp(args: argparse.Namespace) -> None:
-    client = get_client(args)
-    src: str = args.src
-    dst: str = args.dst
+    try:
+        src_parsed = parse_path(args.src)
+        dst_parsed = parse_path(args.dst)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
     recursive: bool = args.recursive
 
-    # Determine direction: if src looks like a remote path (no leading / or .)
-    # This is a simplified heuristic — in practice the user will know
-    src_is_local = _is_local_path(src)
-    dst_is_local = _is_local_path(dst)
-
-    if src_is_local and not dst_is_local:
-        # Upload
-        _cp_upload(client, Path(src), dst, recursive, args)
-    elif not src_is_local and dst_is_local:
-        # Download
-        _cp_download(client, src, Path(dst), recursive, args)
+    if src_parsed.is_local and dst_parsed.is_remote:
+        # Upload: local → remote
+        dst_client = get_client_for_server(dst_parsed.server, args)
+        _cp_upload(dst_client, Path(src_parsed.path), dst_parsed.path, recursive, args)
+    elif src_parsed.is_remote and dst_parsed.is_local:
+        # Download: remote → local
+        src_client = get_client_for_server(src_parsed.server, args)
+        _cp_download(src_client, src_parsed.path, Path(dst_parsed.path), recursive, args)
+    elif src_parsed.is_remote and dst_parsed.is_remote:
+        # Remote → remote (cross-server copy)
+        if not recursive:
+            print("Error: cross-server copy requires -r", file=sys.stderr)
+            sys.exit(1)
+        _cp_remote_to_remote(src_parsed, dst_parsed, args)
     else:
-        print("Error: cp requires one local and one remote path.", file=sys.stderr)
-        print("Local paths start with / or . or ~ ; remote paths are bare (e.g. Repo/folder)", file=sys.stderr)
+        print("Error: at least one path must be remote.", file=sys.stderr)
+        print("Remote: https://server:Repo/path", file=sys.stderr)
+        print("Local: /path, ./path, ~/path", file=sys.stderr)
         sys.exit(1)
 
 
-def _is_local_path(path: str) -> bool:
-    """Heuristic: local paths start with / . ~ or look like relative file paths."""
-    return path.startswith(("/", ".", "~"))
-
-
 def _cp_upload(client: SVNWebClient, src: Path, dst: str, recursive: bool, args: argparse.Namespace) -> None:
-    dst = normalize_remote_path(dst)
     if src.is_file():
         if args.dry_run:
             print(f"(dry-run) upload: {src} → {dst}")
@@ -149,8 +155,10 @@ def _cp_upload(client: SVNWebClient, src: Path, dst: str, recursive: bool, args:
         if not recursive:
             print("Error: use -r to copy directories", file=sys.stderr)
             sys.exit(1)
-        # Recursive upload = sync without delete
-        remote_items = client.ls_recursive(dst)
+        try:
+            remote_items = client.ls_recursive(dst)
+        except (SVNWebClientError, requests.exceptions.RequestException):
+            remote_items = []
         actions = plan_sync_upload(src, dst, remote_items, delete=False)
         _execute_actions(client, actions, args)
     else:
@@ -159,7 +167,6 @@ def _cp_upload(client: SVNWebClient, src: Path, dst: str, recursive: bool, args:
 
 
 def _cp_download(client: SVNWebClient, src: str, dst: Path, recursive: bool, args: argparse.Namespace) -> None:
-    src = normalize_remote_path(src)
     if not recursive:
         if args.dry_run:
             print(f"(dry-run) download: {src} → {dst}")
@@ -172,7 +179,6 @@ def _cp_download(client: SVNWebClient, src: str, dst: Path, recursive: bool, arg
             sys.exit(1)
         print(f"download: {src} → {dst}")
     else:
-        # Recursive download — use zip for efficiency
         if args.dry_run:
             print(f"(dry-run) download directory: {src} → {dst}")
             return
@@ -184,25 +190,66 @@ def _cp_download(client: SVNWebClient, src: str, dst: Path, recursive: bool, arg
         print(f"download: {src} → {dst} ({len(zip_bytes)} bytes)")
 
 
+def _cp_remote_to_remote(src: ParsedPath, dst: ParsedPath, args: argparse.Namespace) -> None:
+    """Copy between two remote servers via a local temp directory."""
+    import tempfile
+
+    src_client = get_client_for_server(src.server, args)
+    dst_client = get_client_for_server(dst.server, args)
+
+    if args.dry_run:
+        print(f"(dry-run) remote copy: {src} → {dst}")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="svncli_") as tmp:
+        tmp_dir = Path(tmp)
+        # Download from source
+        log_verbose(f"Downloading from {src}...", args.verbose)
+        src_items = src_client.ls_recursive(src.path)
+        src_prefix = src.path.rstrip("/") + "/"
+        for item in src_items:
+            if item.is_dir:
+                continue
+            rel = _rel_path(item.path, src_prefix, item.name)
+            dest = tmp_dir / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            src_client.download_file(item.path, dest)
+
+        # Upload to destination
+        log_verbose(f"Uploading to {dst}...", args.verbose)
+        try:
+            dst_items = dst_client.ls_recursive(dst.path)
+        except (SVNWebClientError, requests.exceptions.RequestException):
+            dst_items = []
+        actions = plan_sync_upload(tmp_dir, dst.path, dst_items, delete=False)
+        _execute_actions(dst_client, actions, args)
+
+
 # ── sync ────────────────────────────────────────────────────────────
 
 
 def cmd_sync(args: argparse.Namespace) -> None:
-    client = get_client(args)
-    src: str = args.src
-    dst: str = args.dst
+    try:
+        src_parsed = parse_path(args.src)
+        dst_parsed = parse_path(args.dst)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    src_is_local = _is_local_path(src)
-    dst_is_local = _is_local_path(dst)
-
-    if src_is_local and not dst_is_local:
+    if src_parsed.is_local and dst_parsed.is_remote:
+        dst_client = get_client_for_server(dst_parsed.server, args)
         log_verbose("Sync direction: local → remote (upload)", args.verbose)
-        _sync_upload(client, Path(src), dst, args)
-    elif not src_is_local and dst_is_local:
+        _sync_upload(dst_client, Path(src_parsed.path), dst_parsed.path, args)
+    elif src_parsed.is_remote and dst_parsed.is_local:
+        src_client = get_client_for_server(src_parsed.server, args)
         log_verbose("Sync direction: remote → local (download)", args.verbose)
-        _sync_download(client, src, Path(dst), args)
+        _sync_download(src_client, src_parsed.path, Path(dst_parsed.path), args)
+    elif src_parsed.is_remote and dst_parsed.is_remote:
+        print("Error: sync between two remote servers is not yet supported.", file=sys.stderr)
+        print("Use cp -r to copy between servers.", file=sys.stderr)
+        sys.exit(1)
     else:
-        print("Error: sync requires one local and one remote path.", file=sys.stderr)
+        print("Error: at least one path must be remote.", file=sys.stderr)
         sys.exit(1)
 
 
@@ -258,38 +305,37 @@ def _sync_download(client: SVNWebClient, remote_path: str, local_dir: Path, args
 
 def cmd_login(args: argparse.Namespace) -> None:
     """Log in and save session cookies."""
-    base_url = _resolve_base_url(args)
+    server = getattr(args, "server", None)
+    if not server:
+        print("Error: provide a server URL, e.g.: svncli login https://your-server.com", file=sys.stderr)
+        sys.exit(1)
     verify_ssl = not args.no_verify_ssl
     timeout = getattr(args, "timeout", 60)
 
     if getattr(args, "interactive", False):
-        # Interactive: open browser window
         try:
-            cookie = interactive_login(base_url)
+            cookie = interactive_login(server)
         except SVNWebClientError as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
-        print("Cookies saved to ~/.svncli/cookies.json")
+        print(f"Cookies saved for {server}")
     else:
-        # Non-interactive: try browser extraction
-        domain = _extract_domain(base_url)
+        domain = _extract_domain(server)
         browser = args.browser or os.environ.get("SVNCLI_BROWSER", "chrome")
         try:
             cookie = extract_browser_cookies(domain, browser)
         except SVNWebClientError as e:
             print(f"Could not extract cookies from {browser}: {e}", file=sys.stderr)
-            print("Hint: use 'svncli login -i' for interactive browser login", file=sys.stderr)
+            print(f"Hint: use 'svncli login -i {server}' for interactive login", file=sys.stderr)
             sys.exit(1)
 
         cookie_names = [p.split("=")[0].strip() for p in cookie.split(";")]
         print(f"Extracted {len(cookie_names)} cookies from {browser} for {domain}")
-
-        # Save for future use
-        save_cookies(base_url, cookie)
-        print("Cookies saved to ~/.svncli/cookies.json")
+        save_cookies(server, cookie)
+        print(f"Cookies saved for {server}")
 
     # Verify session works
-    client = SVNWebClient(base_url, cookie, verify_ssl=verify_ssl, timeout=timeout)
+    client = SVNWebClient(server, cookie, verify_ssl=verify_ssl, timeout=timeout)
     try:
         client._get("directoryContent.jsp")
         print("Session is valid.")
@@ -305,26 +351,24 @@ def cmd_logout(args: argparse.Namespace) -> None:
     """Remove saved session cookies."""
     from .client import COOKIE_FILE
 
-    base_url = args.base_url or os.environ.get("SVNCLI_BASE_URL", "")
-    if base_url and COOKIE_FILE.exists():
-        # Remove just this server's cookies
+    server = getattr(args, "server", None)
+    if server and COOKIE_FILE.exists():
         try:
             import json
 
             data = json.loads(COOKIE_FILE.read_text())
-            key = base_url.rstrip("/")
+            key = server.rstrip("/")
             if key in data:
                 del data[key]
                 if data:
                     COOKIE_FILE.write_text(json.dumps(data, indent=2))
                 else:
                     COOKIE_FILE.unlink()
-                print(f"Logged out from {base_url}")
+                print(f"Logged out from {server}")
                 return
         except (json.JSONDecodeError, OSError):
             pass
-    if not base_url and COOKIE_FILE.exists():
-        # No base URL — remove all saved cookies
+    if not server and COOKIE_FILE.exists():
         COOKIE_FILE.unlink()
         print("Removed all saved cookies.")
         return
@@ -332,9 +376,7 @@ def cmd_logout(args: argparse.Namespace) -> None:
 
 
 def cmd_rm(args: argparse.Namespace) -> None:
-    client = get_client(args)
-    remote_path = normalize_remote_path(args.path)
-    # Split into parent dir + item name
+    client, remote_path = resolve_remote(args.path, args)
     parent, name = split_remote_path(remote_path)
     if not parent:
         print("Error: cannot delete repository root", file=sys.stderr)
@@ -347,8 +389,7 @@ def cmd_rm(args: argparse.Namespace) -> None:
 
 
 def cmd_mb(args: argparse.Namespace) -> None:
-    client = get_client(args)
-    remote_path = normalize_remote_path(args.path)
+    client, remote_path = resolve_remote(args.path, args)
     if args.dry_run:
         print(f"(dry-run) mkdir: {remote_path}")
         return
@@ -460,9 +501,6 @@ def build_parser() -> argparse.ArgumentParser:
         description="CLI tool for syncing files with Polarion SVN",
     )
     parser.add_argument("--version", action="version", version="%(prog)s 1.0.0")
-    parser.add_argument(
-        "--base-url", help="Polarion server URL, e.g. https://host.example.com (or SVNCLI_BASE_URL env)"
-    )
     parser.add_argument("--cookie", help="Browser cookie string (or SVNCLI_COOKIE env)")
     parser.add_argument("--browser", help="Browser to extract cookies from (default: chrome, or SVNCLI_BROWSER env)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
@@ -497,11 +535,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     # login
     p_login = sub.add_parser("login", help="Authenticate and save session cookies")
+    p_login.add_argument("server", nargs="?", help="Server URL (e.g. https://your-server.com)")
     p_login.add_argument("-i", "--interactive", action="store_true", help="Open browser window for interactive login")
     p_login.set_defaults(func=cmd_login)
 
     # logout
     p_logout = sub.add_parser("logout", help="Remove saved session cookies")
+    p_logout.add_argument("server", nargs="?", help="Server URL (omit to remove all)")
     p_logout.set_defaults(func=cmd_logout)
 
     # rm

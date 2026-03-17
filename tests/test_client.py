@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
 from svncli.client import SVNWebClient
-from svncli.util import encode_svn_path, normalize_remote_path
+from svncli.util import encode_svn_path, normalize_remote_path, parse_path
 
 # ── URL encoding ────────────────────────────────────────────────────
 
@@ -165,3 +167,51 @@ class TestUrlBuilding:
     def test_base_url_preserves_existing_suffix(self):
         client = SVNWebClient("https://example.com/polarion/svnwebclient", "dummy=cookie")
         assert client.base_url == "https://example.com/polarion/svnwebclient"
+
+
+# ── Path parsing ────────────────────────────────────────────────────
+
+
+class TestParsePath:
+    def test_remote_with_server(self):
+        p = parse_path("https://server.example.com:Repo/folder")
+        assert p.server == "https://server.example.com"
+        assert p.path == "Repo/folder"
+        assert p.is_remote
+
+    def test_remote_with_port(self):
+        p = parse_path("https://server.example.com:8443:Repo/folder")
+        assert p.server == "https://server.example.com:8443"
+        assert p.path == "Repo/folder"
+
+    def test_remote_empty_path(self):
+        p = parse_path("https://server.example.com:")
+        assert p.server == "https://server.example.com"
+        assert p.path == ""
+        assert p.is_remote
+
+    def test_local_absolute(self):
+        p = parse_path("/home/user/folder")
+        assert p.is_local
+        assert p.path == "/home/user/folder"
+
+    def test_local_relative(self):
+        p = parse_path("./folder")
+        assert p.is_local
+        assert p.path == "./folder"
+
+    def test_local_home(self):
+        p = parse_path("~/folder")
+        assert p.is_local
+
+    def test_bare_path_raises(self):
+        with pytest.raises(ValueError, match="Cannot parse path"):
+            parse_path("Repo/folder")
+
+    def test_str_roundtrip(self):
+        p = parse_path("https://server.com:Repo/path")
+        assert str(p) == "https://server.com:Repo/path"
+
+    def test_str_local(self):
+        p = parse_path("./local")
+        assert str(p) == "./local"

@@ -1,8 +1,8 @@
 """End-to-end tests against a real SVN Web Client instance.
 
 Usage:
-    export SVNCLI_BASE_URL="https://debian12-dtct4a-20250.polarion.net.plm.eds.com/polarion/svnwebclient"
-    export SVNCLI_E2E_ROOT="Popelak"   # parent path where test folder will be created
+    export SVNCLI_SERVER="https://your-server.example.com"
+    export SVNCLI_E2E_ROOT="Popelak"
     python -m pytest tests/test_e2e.py -v -s
 
 The test creates a temporary folder under SVNCLI_E2E_ROOT, runs all operations,
@@ -40,10 +40,10 @@ def _get_env(name: str) -> str:
 
 @pytest.fixture(scope="module")
 def client() -> SVNWebClient:
-    base_url = _get_env("SVNCLI_BASE_URL")
-    domain = base_url.split("//")[1].split("/")[0]
+    server = _get_env("SVNCLI_SERVER")
+    domain = server.split("//")[1].split("/")[0].split(":")[0]
     cookie = extract_browser_cookies(domain, "chrome")
-    return SVNWebClient(base_url, cookie, verify_ssl=False)
+    return SVNWebClient(server, cookie, verify_ssl=False)
 
 
 @pytest.fixture(scope="module")
