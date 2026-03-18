@@ -95,7 +95,7 @@ E2E tests auto-create and clean up test folders with UUID names.
 ## Build & CI
 
 - Python 3.10–3.14, macOS + Linux + Windows
-- `pip install -e ".[dev]"` for development
+- `pip install -e ".[dev]"` then `pre-commit install` for development
 - Ruff for linting/formatting (`ruff check`, `ruff format`)
 - GitHub Actions: `.github/workflows/ci.yml` (test matrix + lint), `publish.yml` (PyPI on release)
 - `browser-cookie3` for cookie extraction (not rookiepy — rookiepy doesn't support 3.13+)

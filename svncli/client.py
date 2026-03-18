@@ -211,8 +211,7 @@ class SVNWebClient:
             )
         if "login" in resp.url.lower() and "svnwebclient" not in resp.url.lower():
             raise AuthenticationError(
-                "Session expired — redirected to login page.\n"
-                f"Run: svncli login {self.base_url.split('/polarion')[0]}"
+                f"Session expired — redirected to login page.\nRun: svncli login {self.base_url.split('/polarion')[0]}"
             )
         # Some servers return 200 with a login form instead of redirecting
         if resp.status_code == 200 and ('name="j_username"' in resp.text or 'id="loginForm"' in resp.text):
