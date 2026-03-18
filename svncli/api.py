@@ -27,6 +27,16 @@ from .sync import (
 from .util import normalize_remote_path, parse_path, split_remote_path
 
 
+def _parse_domain(server: str) -> str:
+    """Extract domain from a server URL, e.g. 'https://host.example.com' → 'host.example.com'."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(server)
+    if not parsed.hostname:
+        raise SVNWebClientError(f"Invalid server URL: {server}")
+    return parsed.hostname
+
+
 class PolarionSVNClient:
     """High-level client for Polarion SVN — mirrors the CLI interface.
 
@@ -35,7 +45,7 @@ class PolarionSVNClient:
 
     Example::
 
-        client = PolarionSVNClient(verify_ssl=False)
+        client = PolarionSVNClient()
         client.login("https://server.com")
         items = client.ls("https://server.com:Project/trunk")
     """
@@ -68,7 +78,7 @@ class PolarionSVNClient:
         elif interactive:
             interactive_login(server)
         else:
-            domain = server.split("//")[1].split("/")[0].split(":")[0]
+            domain = _parse_domain(server)
             extracted = extract_browser_cookies(domain, browser)
             save_cookies(server, extracted)
 
@@ -257,7 +267,7 @@ class PolarionSVNClient:
             return self._clients[server]
         cookie = load_saved_cookies(server)
         if not cookie:
-            domain = server.split("//")[1].split("/")[0].split(":")[0]
+            domain = _parse_domain(server)
             try:
                 cookie = extract_browser_cookies(domain)
             except (SVNWebClientError, requests.exceptions.RequestException):

@@ -88,7 +88,9 @@ def cmd_ls(args: argparse.Namespace) -> None:
     if not items:
         if not client.validate_session():
             print(f"Error: session expired. Cannot list: {remote_path}", file=sys.stderr)
-            print(f"Run: svncli login {args.path.split(':')[0] if ':' in args.path else args.path}", file=sys.stderr)
+            print(
+                f"Run: svncli login {args.path.rsplit(':', 1)[0] if ':' in args.path else args.path}", file=sys.stderr
+            )
             sys.exit(1)
         print(f"(empty directory: {remote_path})")
         return
@@ -174,6 +176,12 @@ def _cp_download(client: SVNWebClient, src: str, dst: Path, recursive: bool, arg
         zip_bytes = client.download_directory_zip_to_buffer(src)
         dst.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(BytesIO(zip_bytes)) as zf:
+            # Validate zip entries to prevent path traversal (Zip Slip)
+            dst_resolved = dst.resolve()
+            for name in zf.namelist():
+                target = (dst / name).resolve()
+                if not str(target).startswith(str(dst_resolved)):
+                    raise SVNWebClientError(f"Zip contains path traversal entry: {name}")
             zf.extractall(dst)
         print(f"download: {src} → {dst} ({len(zip_bytes)} bytes)")
 
@@ -247,11 +255,13 @@ def _sync_upload(client: SVNWebClient, local_dir: Path, remote_path: str, args: 
         sys.exit(1)
 
     log_verbose(f"Listing remote: {remote_path} (recursive)...", args.verbose)
+    _remote_exists = True
     try:
         remote_items = client.ls_recursive(remote_path)
     except (SVNWebClientError, requests.exceptions.RequestException):
         log_verbose(f"Remote path {remote_path} does not exist, will create it", args.verbose)
         remote_items = []
+        _remote_exists = False
 
     log_verbose(f"Found {len(remote_items)} remote items", args.verbose)
 
@@ -259,7 +269,7 @@ def _sync_upload(client: SVNWebClient, local_dir: Path, remote_path: str, args: 
     actions = plan_sync_upload(local_dir, remote_path, remote_items, delete=args.delete, exclude=exclude)
 
     # If remote dir doesn't exist, prepend mkdir for the root
-    if not remote_items:
+    if not remote_items and not _remote_exists:
         actions.insert(0, SyncAction(op=SyncOp.MKDIR, remote_path=remote_path, reason="new directory"))
 
     executed = _execute_actions(client, actions, args)
@@ -540,7 +550,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="svncli",
         description="CLI tool for syncing files with Polarion SVN",
     )
-    parser.add_argument("--version", action="version", version="%(prog)s 1.0.0")
+    from importlib.metadata import version
+
+    parser.add_argument("--version", action="version", version=f"%(prog)s {version('svncli')}")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument("--no-verify-ssl", action="store_true", help="Disable SSL certificate verification")
     parser.add_argument("--timeout", type=int, default=60, help="HTTP request timeout in seconds (default: 60)")

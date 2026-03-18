@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from svncli.client import SVNWebClient
@@ -203,6 +205,7 @@ class TestParsePath:
     def test_local_home(self):
         p = parse_path("~/folder")
         assert p.is_local
+        assert p.path == os.path.expanduser("~/folder")
 
     def test_bare_path_raises(self):
         with pytest.raises(ValueError, match="Cannot parse path"):

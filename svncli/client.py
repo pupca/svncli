@@ -112,15 +112,24 @@ def interactive_login(base_url: str) -> str:
 
 def save_cookies(base_url: str, cookie_str: str) -> None:
     """Save cookies to ~/.svncli/cookies.json keyed by base URL."""
+    import os
+
     COOKIE_FILE.parent.mkdir(parents=True, exist_ok=True)
     data = {}
     if COOKIE_FILE.exists():
         with contextlib.suppress(json.JSONDecodeError, OSError):
             data = json.loads(COOKIE_FILE.read_text())
     data[base_url.rstrip("/")] = cookie_str
-    COOKIE_FILE.write_text(json.dumps(data, indent=2))
-    # Restrict permissions — cookies are sensitive
-    COOKIE_FILE.chmod(0o600)
+    # Write atomically with correct permissions to avoid exposing cookies
+    fd = os.open(str(COOKIE_FILE.parent / ".cookies.tmp"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        Path(COOKIE_FILE.parent / ".cookies.tmp").replace(COOKIE_FILE)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            Path(COOKIE_FILE.parent / ".cookies.tmp").unlink()
+        raise
 
 
 def load_saved_cookies(base_url: str) -> str | None:
@@ -325,12 +334,12 @@ class SVNWebClient:
         """Download a single file to a local path."""
         remote_path = normalize_remote_path(remote_path)
         url = self._url("fileDownload.jsp", remote_path, attachment="true")
-        resp = self.session.get(url, stream=True, allow_redirects=True, timeout=self.timeout)
-        self._check_response(resp)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        with open(dest, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=8192):
-                f.write(chunk)
+        with self.session.get(url, stream=True, allow_redirects=True, timeout=self.timeout) as resp:
+            self._check_response(resp)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with open(dest, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
 
     def download_file_to_buffer(self, remote_path: str) -> bytes:
         """Download a single file and return its content as bytes."""
@@ -344,12 +353,12 @@ class SVNWebClient:
         """Download a directory as a zip file."""
         remote_path = normalize_remote_path(remote_path)
         url = self._url("downloadDirectory.jsp", remote_path)
-        resp = self.session.get(url, stream=True, allow_redirects=True, timeout=self.timeout)
-        self._check_response(resp)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        with open(dest, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=8192):
-                f.write(chunk)
+        with self.session.get(url, stream=True, allow_redirects=True, timeout=self.timeout) as resp:
+            self._check_response(resp)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with open(dest, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
 
     def download_directory_zip_to_buffer(self, remote_path: str) -> bytes:
         """Download a directory as a zip and return raw bytes."""
@@ -398,8 +407,8 @@ class SVNWebClient:
             resp = self.session.post(url, files=files, data=data, allow_redirects=True, timeout=self.timeout)
         try:
             self._check_response(resp)
-        except (SVNWebClientError, requests.exceptions.RequestException):
-            # Fall back to add
+        except NotFoundError:
+            # Update endpoint not available — fall back to add
             self.upload_file(remote_path, local_path, commit_message)
 
     def mkdir(self, remote_path: str, commit_message: str = "Directory was added remotely") -> None:

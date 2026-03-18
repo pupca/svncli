@@ -78,11 +78,12 @@ def _hash_file(path: Path) -> str:
 
 def _file_state(local_path: Path, revision: int | None) -> dict:
     """Build a manifest entry for a file after sync."""
+    st = local_path.stat()
     return {
         "revision": revision,
-        "size": local_path.stat().st_size,
+        "size": st.st_size,
         "local_hash": _hash_file(local_path),
-        "local_mtime": local_path.stat().st_mtime,
+        "local_mtime": st.st_mtime,
     }
 
 
@@ -93,7 +94,7 @@ def build_local_manifest(local_dir: Path, exclude: list[str] | None = None) -> d
     """Walk local directory, return {relative_posix_path: absolute_local_path}."""
     manifest: dict[str, Path] = {}
     for item in sorted(local_dir.rglob("*")):
-        if item.is_file():
+        if item.is_file() and not item.is_symlink():
             rel = item.relative_to(local_dir).as_posix()
             if exclude and _matches_any(rel, exclude):
                 continue
@@ -267,11 +268,17 @@ def plan_sync_download(
 
     actions: list[SyncAction] = []
 
+    local_dir_resolved = str(local_dir.resolve())
     for item in remote_items:
         if item.is_dir:
             continue
         rel = _rel_path(item.path, remote_prefix, item.name)
         local_path = local_dir / rel
+        # Reject paths that escape the local directory (path traversal)
+        try:
+            local_path.resolve().relative_to(local_dir_resolved)
+        except ValueError:
+            continue
         prev_state = prev_files.get(rel)
 
         if rel in local_manifest:

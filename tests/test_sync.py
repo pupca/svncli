@@ -76,9 +76,12 @@ class TestBuildLocalManifest:
 
     def test_exclude_directory_glob(self, tmp_path: Path):
         _write_file(tmp_path / "keep.txt")
-        _write_file(tmp_path / ".git" / "config")
-        _write_file(tmp_path / ".git" / "objects" / "abc")
-        manifest = build_local_manifest(tmp_path, exclude=[".git/*"])
+        # Note: in some sandboxes, writing under a directory literally named ".git"
+        # is blocked for safety. Use a different directory name while still testing
+        # that a directory-glob exclude works.
+        _write_file(tmp_path / ".git_test" / "config")
+        _write_file(tmp_path / ".git_test" / "objects" / "abc")
+        manifest = build_local_manifest(tmp_path, exclude=[".git_test/*"])
         assert set(manifest.keys()) == {"keep.txt"}
 
     def test_empty_dir(self, tmp_path: Path):
@@ -97,7 +100,7 @@ class TestMatchesAny:
         assert not _matches_any("path/to/file.txt", ["*.log"])
 
     def test_full_path_match(self):
-        assert _matches_any(".git/config", [".git/*"])
+        assert _matches_any(".git_test/config", [".git_test/*"])
 
     def test_multiple_patterns(self):
         assert _matches_any("file.pyc", ["*.log", "*.pyc"])

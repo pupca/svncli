@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -76,7 +77,8 @@ def parse_path(raw: str) -> ParsedPath:
         return ParsedPath(server=m.group(1), path=normalize_remote_path(m.group(2)))
 
     if raw.startswith(("/", ".", "~")):
-        return ParsedPath(server=None, path=raw)
+        expanded = os.path.expanduser(raw)
+        return ParsedPath(server=None, path=expanded)
 
     # Doesn't look like a URL or local path
     raise ValueError(
