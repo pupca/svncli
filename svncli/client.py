@@ -204,16 +204,40 @@ class SVNWebClient:
 
     def _check_response(self, resp: requests.Response) -> None:
         """Detect auth failures and other errors."""
-        # Redirect to login page
         if resp.status_code in (401, 403):
             raise AuthenticationError(
-                f"Authentication failed ({resp.status_code}). Your session cookie may have expired."
+                f"Authentication failed ({resp.status_code}). Your session cookie may have expired.\n"
+                f"Run: svncli login {self.base_url.split('/polarion')[0]}"
             )
         if "login" in resp.url.lower() and "svnwebclient" not in resp.url.lower():
-            raise AuthenticationError("Redirected to login page. Your session cookie has expired.")
+            raise AuthenticationError(
+                "Session expired — redirected to login page.\n"
+                f"Run: svncli login {self.base_url.split('/polarion')[0]}"
+            )
+        # Some servers return 200 with a login form instead of redirecting
+        if resp.status_code == 200 and ('name="j_username"' in resp.text or 'id="loginForm"' in resp.text):
+            raise AuthenticationError(
+                "Session expired — server returned a login form.\n"
+                f"Run: svncli login {self.base_url.split('/polarion')[0]}"
+            )
         if resp.status_code == 404:
             raise NotFoundError(f"Not found: {resp.url}")
         resp.raise_for_status()
+
+    def validate_session(self) -> bool:
+        """Check if the current session is still valid by probing the web client root."""
+        resp = self.session.get(
+            f"{self.base_url}/directoryContent.jsp",
+            allow_redirects=True,
+            timeout=self.timeout,
+        )
+        if resp.status_code in (401, 403):
+            return False
+        if "login" in resp.url.lower() and "svnwebclient" not in resp.url.lower():
+            return False
+        if 'name="j_username"' in resp.text or 'id="loginForm"' in resp.text:
+            return False
+        return resp.status_code == 200
 
     # ── Directory listing ────────────────────────────────────────────
 

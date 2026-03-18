@@ -32,26 +32,14 @@ def _extract_domain(base_url: str) -> str:
 
 
 def _resolve_cookie(server: str, args: argparse.Namespace) -> str:
-    """Resolve cookie string for a server from saved cookies or browser."""
+    """Resolve cookie string for a server from saved cookies."""
     verbose = getattr(args, "verbose", False)
 
-    # 1. Saved cookies from previous login
     cookie = load_saved_cookies(server)
     if cookie:
         log_verbose(f"Using saved cookies for {server}", verbose)
         return cookie
 
-    # 2. Auto-extract from browser
-    browser = getattr(args, "browser", None) or "chrome"
-    domain = _extract_domain(server)
-    try:
-        cookie = extract_browser_cookies(domain, browser)
-        log_verbose(f"Extracted cookies from {browser} for {domain}", verbose)
-        return cookie
-    except SVNWebClientError:
-        pass
-
-    # 3. Nothing found
     print(f"Error: not authenticated to {server}.", file=sys.stderr)
     print("Run one of:", file=sys.stderr)
     print(f"  svncli login {server}", file=sys.stderr)
@@ -98,6 +86,10 @@ def cmd_ls(args: argparse.Namespace) -> None:
     client, remote_path = resolve_remote(args.path, args)
     items = client.ls_recursive(remote_path) if getattr(args, "recursive", False) else client.ls(remote_path)
     if not items:
+        if not client.validate_session():
+            print(f"Error: session expired. Cannot list: {remote_path}", file=sys.stderr)
+            print(f"Run: svncli login {args.path.split(':')[0] if ':' in args.path else args.path}", file=sys.stderr)
+            sys.exit(1)
         print(f"(empty directory: {remote_path})")
         return
     for item in items:

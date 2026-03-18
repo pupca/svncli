@@ -31,3 +31,5 @@ Thumbs.db
 har/
 myfolder/
 .ruff_cache/
+.test-servers
+tst/
